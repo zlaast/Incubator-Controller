@@ -1,0 +1,9 @@
+***********************************************************
+* Copyright 2020 Vishay Intertechnology, Inc.
+* All rights reserved.
+***********************************************************
+*produced by Vishay General Semiconductor Taiwan
+*Allen Su, 2016/3/11
+*   PSPICE
+.MODEL v12pm12 D  IS=13.1u RS=18m BV=120 IBV=10u VJ=0.6267
++ CJO=1.961n  M=0.58 N=1.5 TT=246p eg=0.74 xti=2.937 t_measured=27
