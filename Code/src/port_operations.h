@@ -1,9 +1,4 @@
-#ifndef PIN_OPERATIONS_H
-#define PIN_OPERATIONS_H
-
-// DISCRETE VALUES
-#define LOW false
-#define HIGH true
+#pragma once
 
 // DATA DIRECTION
 #define SET_INPUT(x)    DDRB &=  ~(1 << x)
@@ -16,5 +11,3 @@
 
 // READ OPERATION
 #define READ_PIN(x)     (PINB & (1 << x))
-
-#endif
