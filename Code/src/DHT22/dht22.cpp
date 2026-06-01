@@ -1,10 +1,7 @@
 #include "dht22.h"
 
-#define LOW false
-#define HIGH true
-
-const uint8_t kCutoff = 8;
-const uint8_t kDelayAmount = 4;     // Microseconds
+const uint8_t kCutoff = 7;
+const uint8_t kDelayAmount = 3;     // Microseconds
 const uint8_t kTimeout = 6;         // Seconds
 
 
@@ -72,7 +69,7 @@ bool DHT22::ReceiveRequest()
 
         // Sensor hasn't responded within kTimeout seconds and has timed out
         // Return that sensor has not responded
-        if (millis() - timeout_start > kTimeout)
+        if ((millis() - timeout_start) > kTimeout)
             return false;
     }
 
@@ -95,17 +92,17 @@ bool DHT22::ReceiveRequest()
     It sends a ~70us pulse to represent a 1.
     
     Experimentally (by printing the samples_ array to the console),
-    it was found that 0 bits are sampled ~5 times and 1 bits are sampled ~12 times
-    at the given clock speed (8MHz) and kDelayAmount (4us).
+    it was found that 0 bits are sampled ~4 times and 1 bits are sampled ~10 times
+    at the given clock speed (8MHz) and kDelayAmount (3us).
 
-    Thus a cutoff of 8 was chosen. If below 8 samples then the bit is a 0, if above
+    Thus a cutoff of 7 was chosen. If below 7 samples then the bit is a 0, if above
     8 samples the bit is a 1.
 
     We can convert these into a bitstream while automatically converting to a
     uint16_t by the following:
 
         (value << 1) causes a 0 to be bit shifted into value.
-        This is then bitwise ORed with (samples_[bit] > 8), which
+        This is then bitwise ORed with (samples_[bit] > 7), which
         is a boolean statement and therefore will output either a 0 or 1.
 
     Also, if the data is for temperature, then the first bit is a sign bit.

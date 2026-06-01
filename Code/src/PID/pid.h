@@ -33,6 +33,7 @@
 
 #include <Arduino.h>
 #include "../pinout.h"
+#include "../constants.h"
 
 class PID
 {
@@ -41,6 +42,7 @@ class PID
         bool Update(float process_variable);
         void UpdateSetpoint(float new_setpoint);
         void UpdateTuning(float Kp, float Ki, float Kd);
+        float GetSetpoint() const { return setpoint_; }
 
     private:
         uint8_t pwm_pin_;
@@ -57,5 +59,5 @@ class PID
         float Normalize(float raw_output);
         float ClampOutput(float output);
         float CalculateError(float process_variable);
-        void CalculateNormalizationBounds();
+        void CalculateMaxError();
 };

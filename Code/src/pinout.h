@@ -1,7 +1,8 @@
 #pragma once
 
 // CONTROLS PINS [MCU INPUTS]
-const uint8_t kKnobPin          = PB2;
+// const uint8_t kKnobPin          = PB2;
+const uint8_t kKnobPin = 14;    // CHANGE ME
 const uint8_t kButtonPin        = PB5;
 
 // TEMP AND HUMIDITY SENSOR PIN [MCU INPUTS]

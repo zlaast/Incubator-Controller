@@ -15,13 +15,12 @@
 #pragma once
 
 #include <Arduino.h>
-#include <string.h>
+#include "../constants.h"
 #include "../port_operations.h"
 
 class DHT22
 {
     private:
-        enum Climate { kHumidity, kTemperature };
         uint8_t data_pin_;                          // Pin that connects to the DHT22 DAT pin
         uint8_t samples_[42];
         float humidity_;                            // Percent relative humidity (% RH)

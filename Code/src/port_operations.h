@@ -9,5 +9,8 @@
 #define WRITE_LOW(x)    PORTB &= ~(1 << x)
 #define WRITE_TOGGLE(x) PORTB ^=  (1 << x)
 
+// PULLUP
+#define PULLUP(x)       PORTB |=  (1 << x)
+
 // READ OPERATION
 #define READ_PIN(x)     (PINB & (1 << x))

@@ -1,11 +1,5 @@
 #include "pid.h"
 
-const float kMinTemp = 15.0f;
-const float kMaxTemp = 45.0f;
-const float kPwmMinOutput = 0;
-const float kPwmMaxOutput = 159;
-
-
 PID::PID()
 {
     pwm_pin_ = kPwmPin;
@@ -14,7 +8,7 @@ PID::PID()
     Ki_ = 0.0f;
     Kd_ = 0.0f;
 
-    CalculateNormalizationBounds();
+    CalculateMaxError();
 }
 
 
@@ -41,7 +35,7 @@ bool PID::Update(float process_variable)
 void PID::UpdateSetpoint(float new_setpoint)
 {
     setpoint_ = new_setpoint;
-    CalculateNormalizationBounds();
+    CalculateMaxError();
 }
 
 
@@ -99,8 +93,8 @@ float PID::CalculateError(float process_variable)
 }
 
 
-void PID::CalculateNormalizationBounds()
+void PID::CalculateMaxError()
 {
-    x_min_ = setpoint_ - kMaxTemp;
-    x_max_ = setpoint_ - kMinTemp;
+    x_min_ = (Kp_ + Ki_ + Kd_)*(setpoint_ - kMaxTemp);
+    x_max_ = (Kp_ + Ki_ + Kd_)*(setpoint_ - kMinTemp);
 }
