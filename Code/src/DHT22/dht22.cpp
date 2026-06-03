@@ -2,7 +2,7 @@
 
 const uint8_t kCutoff = 7;
 const uint8_t kDelayAmount = 3;     // Microseconds
-const uint8_t kTimeout = 6;         // Seconds
+const uint8_t kTimeout = 6000;      // Milliseconds
 
 
 DHT22::DHT22(uint8_t DAT_pin)

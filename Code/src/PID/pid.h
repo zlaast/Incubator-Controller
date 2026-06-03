@@ -39,7 +39,7 @@ class PID
 {
     public:
         PID();
-        bool Update(float process_variable);
+        bool Update(float process_value);
         void UpdateSetpoint(float new_setpoint);
         void UpdateTuning(float Kp, float Ki, float Kd);
         float GetSetpoint() const { return setpoint_; }
@@ -50,14 +50,10 @@ class PID
         float Kp_;
         float Ki_;
         float Kd_;
-        float x_max_;   // Min value for normalization
-        float x_min_;   // Max value for normalization
 
         float P(float error);
         float I(float error);
         float D(float error);
-        float Normalize(float raw_output);
         float ClampOutput(float output);
-        float CalculateError(float process_variable);
-        void CalculateMaxError();
+        float CalculateError(float process_value);
 };

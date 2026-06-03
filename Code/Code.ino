@@ -40,7 +40,7 @@
 #include <util/delay.h>
 
 // Macros
-#define F_CPU 16000000UL    // CHANGE ME
+#define F_CPU 8000000UL    // CHANGE ME
 
 // Constants
 const uint8_t kSensorSamples = 3;
@@ -71,28 +71,42 @@ void setup()
     clock_prescale_set(clock_div_1);
 
     // Setup PID parameters
-    pid_controller.UpdateTuning(1.5f, 0.0f, 0.0f);
+    pid_controller.UpdateTuning(15.0f, 0.0f, 0.0f);
     pid_controller.UpdateSetpoint(37.5f);
 
     // Setup PWM (for Arduino Nano) CHANGE ME
-    // This is setup for a 100kHz signal
-    SET_OUTPUT(9);
+    SET_OUTPUT(kPwmPin);
     TCCR1A = 0;
     TCCR1B = 0;
-    TCNT1  = 0;
-    TCCR1A = (1 << COM1A1) | (1 << WGM11);
-    TCCR1B = (1 << WGM13) | (1 << WGM12) | (1 << CS10);
-    ICR1 = kPwmMaxOutput;
-    Serial.begin(9600);
+    TCCR1A |= (1 << COM1A1);
+    TCCR1A |= (1 << WGM11);
+    TCCR1B |= (1 << WGM12) | (1 << WGM13);
+    TCCR1B |= (1 << CS10);
+    ICR1 = 159;
 
-    // // Setup PWM for PID. 100kHz frequency. ATtiny85 specific
-    // SET_OUTPUT(kPwmPin); // MUST be PB1 for ATtiny85
-    // PLLCSR |= (1 << PLLE);
+
+
+
+
+
+
+
+    // ATTINY85
+    // SET_OUTPUT(kPwmPin);
     // _delay_us(110);
+    // PLLCSR |= (1 << PLLE);
     // while (!(PLLCSR & (1 << PLOCK)));
     // PLLCSR |= (1 << PCKE);
-    // OCR1C = kPwmMaxOutput;
+    // OCR1C = 159;
     // TCCR1 = (1 << PWM1A) | (1 << COM1A1) | (1 << CS11) | (1 << CS10);
+
+
+
+
+
+
+
+
 
     // Setup Button and Knob
     SET_INPUT(kKnobPin);
@@ -110,6 +124,16 @@ void loop()
     // State Machine
     switch (state)
     {
+        case kAdjustSetpoint:
+            if (button_pressed)
+            {
+                state = kNormal;
+                break;
+            }
+
+            AdjustSetpointState();
+            break;
+
         case kNormal:
             if (button_pressed)
             {
@@ -120,17 +144,6 @@ void loop()
             NormalState();
             break;
         
-        case kAdjustSetpoint:
-            if (button_pressed)
-            {
-                state = kNormal;
-                display.Clear();
-                break;
-            }
-
-            AdjustSetpointState();
-            break;
-
         case kError:
             ErrorState();
             break;
@@ -191,9 +204,13 @@ void NormalState()
 
 void AdjustSetpointState()
 {
+    const uint16_t kTimeout = 30000; // milliseconds
     const uint8_t kMaxSamples = 250;
     static uint8_t sample_count = 0;
     static uint32_t avg_value = 0;
+
+    static uint32_t timeout_start = 0;
+    uint32_t current_time = millis();
 
     int value = analogRead(kKnobPin);
     int position = map(value, 0, 1023, kMaxTemp*10, kMinTemp*10);
@@ -205,12 +222,22 @@ void AdjustSetpointState()
     {
         avg_value /= kMaxSamples;
         float new_setpoint = avg_value / 10.0f;
+        new_setpoint = round(new_setpoint * 2.0f) / 2.0f;       // Rounds to nearest 0.5C
 
         pid_controller.UpdateSetpoint(new_setpoint);
         display.ShowTemperature(pid_controller.GetSetpoint());
 
         sample_count = 0;
         avg_value = 0;
+    }
+
+    // Oops! You forgot that you were adjusting the setpoint and just left it there!
+    // After 30 seconds it will automatically exit this mode to prevent this scenario.
+    // Don't update the setpoint if this happens
+    if ((current_time - timeout_start) > kTimeout)
+    {
+        timeout_start = current_time;
+        state = kNormal;
     }
 }
 
@@ -241,3 +268,22 @@ void ErrorState()
         start_time = current_time;
     }
 }
+
+
+/*
+
+1. Disable PID controller and output 255 continuously. Time how long it takes to reach 37.5C
+    COMPLETE: In an empty incubator it will take about 7.5 minutes to reach 37.5C from ~24C.
+
+2. Measure how much current is entering the peltier device to ballpark the power
+    COMPLETE: 11V and 4A through the TEC. This means the TEC itself can output a maximum of 44W.
+
+3. Let everything cool back down to room temperature. Disable the PID controller but pretend
+   that Kp = 1.0 and heat the incubator using that value. For example, if room temp is 24C and the setpoint
+   is 37.5, then with a Kp = 1.0 then the error is 13.5 which translates to 34/159. Let that heat
+   the incubator and time how long that takes.
+    COMPLETE: At about 7.5 minutes, it stalled at ~30C with a ~35% duty cycle. This means that ~15W is not enough
+    to get to 37.5C.
+
+4. From the above data, we can guesstimate a decent Kp and Ki value.
+*/
