@@ -54,6 +54,6 @@ class PID
         float P(float error);
         float I(float error);
         float D(float error);
-        float ClampOutput(float output);
         float CalculateError(float process_value);
+        float ClampOutput(float input, uint8_t min, uint8_t max);
 };

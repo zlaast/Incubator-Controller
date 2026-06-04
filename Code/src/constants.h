@@ -3,7 +3,7 @@
 #define LOW false
 #define HIGH true
 
-// PWM Signal: Counter for ATtiny85
+// PWM Signal: Counter for ATtiny85 to output 100kHz PWM signal
 const float kPwmMinOutput = 0;
 const float kPwmMaxOutput = 159;
 
