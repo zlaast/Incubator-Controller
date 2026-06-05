@@ -5,7 +5,7 @@
     Author: Z'Laast Allicock
     
     Description:
-        Library to read a DHT22 sensor.
+        Library to read a DHT22 temperature/humidity sensor.
 
     Notes:
         Clock needs to be at least 8MHz
@@ -15,29 +15,36 @@
 #pragma once
 
 #include <Arduino.h>
-#include "../constants.h"
 #include "../port_operations.h"
 
-class DHT22
+class DHT22Sensor
 {
-    private:
-        uint8_t data_pin_;                          // Pin that connects to the DHT22 DAT pin
-        uint8_t buffer_[42];
-        float humidity_;                            // Percent relative humidity (% RH)
-        float temperature_;                         // Celsius
-
-        void RequestData();
-        bool ReceiveData();
-        bool DecodeData();
-
-        // Helper Functions
-        void BubbleSort(uint8_t array[]);
-        uint8_t Calculate_kCutoff();
-        float Cost(uint8_t start, uint8_t end);
-
     public:
-        DHT22(uint8_t DAT_pin);
+        DHT22Sensor(uint8_t data_pin);
         uint8_t ReadSensor();
-        float GetHumidity()    const { return humidity_; }
+        float GetHumidity() const { return humidity_; }
         float GetTemperature() const { return temperature_; }
+
+    private:
+        uint8_t data_pin_;
+        uint8_t data_buffer_[42];
+        uint8_t binarize_threshold;
+        float humidity_;            // Relative Humidity
+        float temperature_;         // Celsius
+
+        // Primary Functions
+        void ClearDataBuffer();
+        void SendRequest();
+        bool ReceiveResponse();
+        bool DecodeResponse();
+        
+        // DecodeResponse Helper Functions
+        void BinarizeBufferData(uint8_t buffer[]);
+        bool isBinarizedDataValid(uint8_t buffer[]);
+        void ExtractHumidityAndTemperature(uint8_t buffer[]);
+        
+        // Find Binarize Threshold using ckmeans algorithm
+        void FindBinarizeThreshold();
+        void BubbleSort(uint8_t array[]);
+        float Ckmeans_CalculateCost(uint8_t start, uint8_t end);
 };

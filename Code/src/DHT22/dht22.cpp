@@ -1,175 +1,206 @@
 #include "dht22.h"
 
-uint8_t kCutoff = 1;
-bool found_cutoff = false;
-const uint8_t kDelayAmount = 3;     // Microseconds
-const uint8_t kTimeout = 10000;     // Milliseconds
-const uint8_t kBufferSize = 42;
+#define LOW false
+#define HIGH true
 
-struct BufferRAII
+
+DHT22Sensor::DHT22Sensor(uint8_t data_pin)
 {
-    uint8_t* buffer;
-    size_t size;
+    data_pin_ = data_pin;
+    binarize_threshold = 0;
+    humidity_ = 0.0f;
+    temperature_ = 0.0f;
+    ClearDataBuffer();
 
-    ~BufferRAII()
-    {
-        memset(buffer, 0, size);
-    }
-};
-
-
-DHT22::DHT22(uint8_t DAT_pin)
-{
-    data_pin_ = DAT_pin;
-    _delay_ms(1100);                // Wait at least 1s for sensor to stabilize
+    _delay_ms(1100);    // Sensor needs ~1s to stabilize from power-on
 }
 
 
-uint8_t DHT22::ReadSensor()
+uint8_t DHT22Sensor::ReadSensor()
 {
-    BufferRAII clean { buffer_, sizeof(buffer_) };
+    SendRequest();
 
-    RequestData();
-
-    if (!ReceiveData())
+    if (!ReceiveResponse())
+    {
+        ClearDataBuffer();
         return 1;
+    }
 
-    if (!DecodeData())
+    if (!DecodeResponse())
+    {
+        // Decoding could fail due to wrong binarize threshold, leading to garbled data.
+        // If the clock drifts the sample amounts in the buffer may change, leading to a threshold that is no longer applicable.
+        // While this isn't likely to happen, recalculate the threshold anyway just in case it fixes the problem.
+        FindBinarizeThreshold();
+
+        ClearDataBuffer();
         return 2;
+    }
 
+    ClearDataBuffer();
     return 0;
 }
 
 
-void DHT22::RequestData()
+void DHT22Sensor::ClearDataBuffer()
+{
+    memset(data_buffer_, 0, sizeof(data_buffer_));
+}
+
+
+void DHT22Sensor::SendRequest()
 {
     SET_OUTPUT(data_pin_);
 
     WRITE_LOW(data_pin_);
     _delay_ms(5);
-    
+
     WRITE_HIGH(data_pin_);
-    _delay_us(20);
+    _delay_us(25);
 }
 
 
-bool DHT22::ReceiveData()
+bool DHT22Sensor::ReceiveResponse()
 {
+    const uint8_t kTimeoutMilliseconds = 10;
+    uint32_t response_start_time = millis();
+
     SET_INPUT(data_pin_);
-
     bool pin_state = LOW;
-    bool done = false;
-    uint32_t timeout_start = millis();
+    bool done_sampling = false;
 
-    for (uint8_t bit = 0; bit < kBufferSize;)
+    for (uint8_t bit = 0; bit < sizeof(data_buffer_);)
     {
         pin_state = READ_PIN(data_pin_);
-        _delay_us(kDelayAmount);        // Pin state doesn't seem to read correctly without a small delay
-        
+
         if (pin_state == HIGH)
         {
-            buffer_[bit]++;
-            done = false;
+            data_buffer_[bit]++;
+            done_sampling = false;
         }
-
-        else if (pin_state == LOW && !done)
+        else if (pin_state == LOW && !done_sampling)
         {
             bit++;
-            done = true;
+            done_sampling = true;
         }
 
-        // Sensor hasn't responded within kTimeout seconds and has timed out
-        // Return that sensor has not responded
-        if ((millis() - timeout_start) > kTimeout)
+        if ((millis() - response_start_time) > kTimeoutMilliseconds)
             return false;
     }
 
     return true;
 }
 
-/*
-    DecodeData Explanation.
 
-    kCutoff is dependent on clock speed and kDelayAmount.
-
-    In the function ReceiveData, the sensor pin is polled
-    on whether it's high or low.
-
-    When then pin goes high, a counter starts and samples how many
-    times the pin is read high. The speed of which the pin is sampled
-    is determined by the clock speed and kDelayAmount.
-
-    The sensor sends a ~27us pulse to represent a 0.
-    It sends a ~70us pulse to represent a 1.
-    
-    Experimentally (by printing the buffer_ array to the console),
-    it was found that 0 bits are sampled ~4 times and 1 bits are sampled ~10 times
-    at the given clock speed (8MHz) and kDelayAmount (3us).
-
-    Thus a cutoff of 7 was chosen. If below 7 samples then the bit is a 0, if above
-    8 samples the bit is a 1.
-
-    We can convert these into a bitstream while automatically converting to a
-    uint16_t by the following:
-
-        (value << 1) causes a 0 to be bit shifted into value.
-        This is then bitwise ORed with (buffer_[bit] > 7), which
-        is a boolean statement and therefore will output either a 0 or 1.
-
-    Also, if the data is for temperature, then the first bit is a sign bit.
-    If the first bit is a 1, then the temperature is negative.
-    After that, we must remove the sign bit by bitwise ANDing with 0x7FFF
-
-    Note that start = 2. This is because "bits" 0 and 1 are junk data.
-*/
-
-bool DHT22::DecodeData()
+bool DHT22Sensor::DecodeResponse()
 {
-    if (!found_cutoff)
-    {
-        uint8_t temp_buffer[42] = {0};
-        memcpy(temp_buffer, buffer_, sizeof(buffer_));
-        BubbleSort(temp_buffer);
-        kCutoff = Calculate_kCutoff();
-        found_cutoff = true;
-    }
-
     uint8_t bytes[5] = {0};
-    for (uint8_t byte = 0; byte < 5; byte++)
-    {
-        uint8_t start = 2 + (byte * 8);
-        uint8_t end = start + 8;
 
-        for (uint8_t bit = start; bit < end; bit++)
-        {
-            bytes[byte] = (bytes[byte] << 1) | (buffer_[bit] > kCutoff);
-        }
-    }
+    if (binarize_threshold == 0)
+        FindBinarizeThreshold();
 
-    uint8_t checksum = bytes[0] + bytes[1] + bytes[2] + bytes[3];
+    BinarizeBufferData(bytes);
 
-    if (checksum != bytes[4])
+    if (isBinarizedDataValid(bytes) == false)
         return false;
 
-    uint16_t humidity = (bytes[0] << 8) | bytes[1];
-    humidity_ = humidity * 0.1f;
-
-    uint16_t temperature = (bytes[2] << 8) | bytes[3];
-    bool negative_temp = temperature & 0x8000;
-    temperature &= 0x7FFF;
-    temperature_ = negative_temp ? -(temperature * 0.1f) : (temperature * 0.1f);
+    ExtractHumidityAndTemperature(bytes);
 
     return true;
 }
 
 
-void DHT22::BubbleSort(uint8_t array[])
+void DHT22Sensor::BinarizeBufferData(uint8_t buffer[])
 {
-    for (uint8_t i = 0; i < (kBufferSize-1); i++)
+    for (uint8_t byte = 0; byte < 5; byte++)
+    {
+        // First two bits are junk data and are skipped
+        uint8_t byte_start = 2 + (byte * 8);
+        uint8_t byte_end = byte_start + 8;
+
+        for (uint8_t bit = byte_start; bit < byte_end; bit++)
+        {
+            // 1. Shift a 0 into the current byte (the 1 is for how many 0-bits we're shifting in, which is just one.)
+            // 2. Determine if 1 or 0 in data buffer. Returns bool which is a 1 or 0.
+            // 3. Bitwse-OR with shifted in 0. Ta-da! Binarized!
+            buffer[byte] <<= 1;
+            bool isOne = data_buffer_[bit] > binarize_threshold;
+            buffer[byte] |= isOne;
+        }
+    }
+}
+
+
+bool DHT22Sensor::isBinarizedDataValid(uint8_t buffer[])
+{
+    // Checksum. buffer[4] is the checksum returned by the sensor
+    uint8_t checksum = buffer[0] + buffer[1] + buffer[2] + buffer[3];
+    
+    if (checksum != buffer[4])
+        return false;
+
+    return true;
+}
+
+
+void DHT22Sensor::ExtractHumidityAndTemperature(uint8_t buffer[])
+{
+    uint16_t humidity = (buffer[0] << 8) | buffer[1];
+    humidity_ = humidity * 0.1f;
+
+    uint16_t temperature = (buffer[2] << 8) | buffer[3];
+    bool negative_temp = temperature & 0x8000;
+    temperature &= 0x7FFF;
+    temperature_ = negative_temp ? -(temperature * 0.1f) : (temperature * 0.1f);
+}
+
+
+// Find Binarize Threshold using ckmeans algorithm
+uint8_t sums[43] = {0};
+uint8_t sums_of_squares[43] = {0};
+
+void DHT22Sensor::FindBinarizeThreshold()
+{
+    // Create copy of data_buffer_ and sort it (ascending)
+    uint8_t temp_buffer[42] = {0};
+    memcpy(temp_buffer, data_buffer_, sizeof(data_buffer_));
+    BubbleSort(temp_buffer);
+
+    // Find threshold by using ckmeans (optimal k-means) using 1d data and k=2
+    uint8_t best_index = 0;
+    uint8_t kBufferSize = sizeof(temp_buffer);
+    float best_cost = 99999.0f;
+
+    for (int i = 0; i < kBufferSize; i++)
+    {
+        sums[i+1] = sums + temp_buffer[i];
+        sums_of_squares[i+1] = sums_of_squares[i] + temp_buffer[i] * temp_buffer[i];
+    }
+
+    for (uint8_t split = 1; split < (kBufferSize - 1); split++)
+    {
+        float cost = Ckmeans_CalculateCost(0, split) + Ckmeans_CalculateCost(split, kBufferSize);
+
+        if (cost < best_cost)
+        {
+            best_cost = cost;
+            best_index = split;
+        }
+    }
+
+    binarize_threshold = (temp_buffer[best_index - 1] + temp_buffer[best_index]) * 0.5f;
+}
+
+
+void DHT22Sensor::BubbleSort(uint8_t array[])
+{
+    const uint8_t kArraySize = sizeof(array);
+
+    for (uint8_t i = 0; i < (kArraySize-1); i++)
     {
         bool swapped = false;
 
-        for (uint8_t ii = 0; ii < (kBufferSize-i-1); ++ii)
+        for (uint8_t ii = 0; ii < (kArraySize-i-1); ++ii)
         {
             if (array[ii] > array[ii+1])
             {
@@ -187,72 +218,10 @@ void DHT22::BubbleSort(uint8_t array[])
 }
 
 
-/*
-    Calculates kCutoff
-
-
-    In the DecodeData function, you need to decide whether a bit
-    is a 0 or a 1 based on the sample count in buffer_. This is done
-    by comparing the count to kCutoff. If the count is less than kCutoff
-    then the bit send is a 0, otherwise a 1.
-
-    But the amount of samples we count are dependent on kDelayAmount and
-    the clock speed, which means kCutoff needs to shift accordingly too.
-
-    What we *do* know is that we'll have a bunch of small sample counts,
-    and a bunch of large sample counts. Take this example data:
-
-    Unsorted
-    0,11,3,3,3,4,4,3,9,3,4,3,8,3,9,9,3,10,3,3,4,4,3,3,3,4,9,9,3,9,9,9,9,9,3,3,4,4,10,9,9,3
-    
-    We can see that if our sample count is 4 and below it's a 0. If the sample count is 8 and
-    above it's a 1.
-
-    Sorted
-    0,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,4,4,4,4,4,4,4,4,8,9,9,9,9,9,9,9,9,9,9,9,9,10,10,11
-
-    I've sorted the data and we easily see a cutoff. If we have (8 - 4)/2 = 6, then we can
-    have a threshold of kCutoff = 6. Then if the count is below 6 it's a 0, and above 6 it's
-    a 1.
-
-    But what if we use a different clock speed? Wouldn't kCutoff need to change? Yup.
-    So I've implemented a crappy ckmeans algorithm to perform 1d data clustering which
-    would then output a kCutoff value. This is for a k of 2.
-*/
-uint8_t calculated_sums[43] = {0};
-uint8_t calculated_sum_of_squares[43] = {0};
-
-uint8_t DHT22::Calculate_kCutoff()
+float DHT22Sensor::Ckmeans_CalculateCost(uint8_t start, uint8_t end)
 {
-    // ckmeans algorithm for k=2
-
-    float best_cost = 99999.0f;
-    uint8_t best_index = 0;
-
-    for (int i = 0; i < kBufferSize; i++)
-    {
-        calculated_sums[i+1] = calculated_sums + buffer_[i];
-        calculated_sum_of_squares[i+1] = calculated_sum_of_squares[i] + buffer_[i] * buffer_[i];
-    }
-
-    for (uint8_t split = 1; split < (kBufferSize - 1); split++)
-    {
-        float cost = Cost(0, split) + Cost(split, kBufferSize);
-
-        if (cost < best_cost)
-        {
-            best_cost = cost;
-            best_index = split;
-        }
-    }
-
-    return (buffer_[best_index - 1] + buffer_[best_index]) * 0.5f;
-}
-
-float DHT22::Cost(uint8_t start, uint8_t end)
-{
-    float sum = calculated_sums[end] - calculated_sums[start];
-    float sum_of_squares = calculated_sum_of_squares[end] - calculated_sum_of_squares[start];
+    float sum = sums[end] - sums[start];
+    float sum_of_squares = sums_of_squares[end] - sums_of_squares[start];
     uint8_t n = end - start;
 
     if (n <= 1)
