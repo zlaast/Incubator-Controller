@@ -1,39 +1,31 @@
 #include "pid.h"
 
-uint16_t CHANGE_ME_COUNTER = 1;
+// PWM values to produce 100kHz signal on ATtiny85
+// See setup() in Code.ino which sets up the 100kHz PWM output
 
-PID::PID()
+const float kPwmMinOutput = 0;
+const float kPwmMaxOutput = 159;
+
+PID::PID(uint8_t pwm_pin)
 {
-    pwm_pin_ = kPwmPin;
+    pwm_pin_ = pwm_pin;
     setpoint_ = 37.5f;
     Kp_ = 1.0f;
     Ki_ = 0.0f;
     Kd_ = 0.0f;
+    Kp_frozen_ = 0.0f;
+    Ki_frozen_ = 0.0f;
+    Kd_frozen_ = 0.0f;
     OCR1A = 0;
 }
 
 
-bool PID::Update(float process_value)
+void PID::Output(float process_value)
 {
     float error = CalculateError(process_value);
-    float output_raw = P(error) + I(error);
+    float output_raw = P(error) + I(error) + D(error);
     uint8_t output = ClampOutput(output_raw, kPwmMinOutput, kPwmMaxOutput);
     OCR1A = output;
-
-    Serial.print("Error: ");
-    Serial.print(error);
-    Serial.println();
-
-    Serial.print("Output: ");
-    Serial.print(OCR1A);
-    Serial.println();
-    Serial.print("Duty: ");
-    Serial.print(OCR1A/159);
-    Serial.print("%");
-    Serial.println();
-    Serial.println();
-
-    return true;
 }
 
 
@@ -51,18 +43,25 @@ void PID::UpdateTuning(float Kp, float Ki, float Kd)
 }
 
 
+void PID::FreezeOperations()
+{
+    OCR1A = 0;
+    Kp_frozen_ = Kp_;
+    Ki_frozen_ = Ki_;
+    Kd_frozen_ = Kd_;
+
+    UpdateTuning(0.0f, 0.0f, 0.0f);
+}
+
+
+void PID::RestoreOperations()
+{
+    UpdateTuning(Kp_frozen_, Ki_frozen_, Kd_frozen_);
+}
+
+
 float PID::P(float error)
 {
-    Serial.print(CHANGE_ME_COUNTER);
-    Serial.print(":");
-    Serial.println();
-
-    Serial.print("P: ");
-    Serial.print(Kp_ * error);
-    Serial.println();
-
-    CHANGE_ME_COUNTER++;
-
     return Kp_ * error;
 }
 
@@ -74,10 +73,6 @@ float PID::I(float error)
     I += Ki_ * error;
     I = ClampOutput(I, kPwmMinOutput, kPwmMaxOutput);
 
-    Serial.print("I: ");
-    Serial.print(I);
-    Serial.println();
-
     return I;
 }
 
@@ -85,6 +80,7 @@ float PID::I(float error)
 float PID::D(float error)
 {
     // For future implementation if desired
+    return 0.0f;
 }
 
 

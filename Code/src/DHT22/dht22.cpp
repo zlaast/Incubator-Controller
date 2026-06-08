@@ -1,3 +1,10 @@
+/*
+    Error Codes:
+        0 - No error.
+        1 - No sensor data. Sensor may be disconnected.
+        2 - Sensor data is incorrect. Failed checksum.
+*/
+
 #include "dht22.h"
 
 #define LOW false
@@ -18,27 +25,34 @@ DHT22Sensor::DHT22Sensor(uint8_t data_pin)
 
 uint8_t DHT22Sensor::ReadSensor()
 {
+    uint8_t error_code = 0;
+
     SendRequest();
 
     if (!ReceiveResponse())
     {
         ClearDataBuffer();
-        return 1;
+        error_code = 1;
+        
+        return error_code;
     }
 
     if (!DecodeResponse())
     {
-        // Decoding could fail due to wrong binarize threshold, leading to garbled data.
+        // Decoding could fail due to a wrong binarize threshold, leading to garbled data.
         // If the clock drifts the sample amounts in the buffer may change, leading to a threshold that is no longer applicable.
-        // While this isn't likely to happen, recalculate the threshold anyway just in case it fixes the problem.
+        // While this isn't likely to happen, recalculating the threshold just may fix the problem automatically.
         FindBinarizeThreshold();
 
         ClearDataBuffer();
-        return 2;
+        error_code = 2;
+        
+        return error_code;
     }
 
     ClearDataBuffer();
-    return 0;
+
+    return error_code;
 }
 
 
@@ -200,13 +214,13 @@ void DHT22Sensor::BubbleSort(uint8_t array[])
     {
         bool swapped = false;
 
-        for (uint8_t ii = 0; ii < (kArraySize-i-1); ++ii)
+        for (uint8_t j = 0; j < (kArraySize-i-1); ++j)
         {
-            if (array[ii] > array[ii+1])
+            if (array[j] > array[j+1])
             {
-                uint8_t temp = array[ii];
-                array[ii] = array[ii+1];
-                array[ii+1] = temp;
+                uint8_t temp = array[j];
+                array[j] = array[j+1];
+                array[j+1] = temp;
 
                 swapped = true;
             }

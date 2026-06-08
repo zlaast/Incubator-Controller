@@ -15,6 +15,7 @@
 #pragma once
 
 #include <Arduino.h>
+#include <util/delay.h>
 #include "../port_operations.h"
 
 class DHT22Sensor

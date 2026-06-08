@@ -22,93 +22,76 @@
         0 - No error. This should never be displayed during normal operation.
         1 - No sensor data. Sensor may be disconnected.
         2 - Sensor data is incorrect. Failed checksum.
-        3 - Temperature out of expected bounds (too hot/too cold)
 
 *********************************************************************/
 
-// Includes
+#define F_CPU 8000000UL
+#define LOW false
+#define HIGH true
+
+// LIBRARIES: user made
 #include "src/pinout.h"
-#include "src/constants.h"
 #include "src/port_operations.h"
 #include "src/PID/pid.h"
 #include "src/DHT22/dht22.h"
 #include "src/Display/display.h"
 
-// Libraries
+// LIBRARIES: Standard
 #include <avr/io.h>
 #include <avr/power.h>
 #include <util/delay.h>
 
-// Macros
-#define F_CPU 8000000UL    // CHANGE ME
+// STATE CONTROL
+uint8_t error_code = 0;
+bool error_occurred = false;
+enum States { kNormal, kAdjustSetpoint, kError };
+States state = kNormal;
 
-// Constants
+// CLASS INITIALIZATION
+PID pid_controller(kPwmPin);
+DHT22Sensor sensor(kSensorPin);
+Display display(kDisplayClkPin, kDisplayDioPin);
+
+// OPERATION TIMING
+uint32_t start_time = 0;
+uint32_t current_time = 0;
+uint16_t elapsed_time = 0;
 const uint8_t kSensorSamples = 3;
 const uint16_t kSampleInterval = 2100;
 
-// Enums
-enum States { kNormal, kAdjustSetpoint, kError };
-
-// Class Instances
-PID pid_controller;
-Display display(7, 6);      // CHANGE ME
-DHT22 sensor(kSensorPin);
-
-// Global Variables
-uint8_t error_code = 0;
-uint16_t elapsed_time = 0;
-uint32_t start_time = 0;
-uint32_t current_time = 0;
-States state = kNormal;
-
-// Button Variables
-bool last_button_state = LOW;
+// UI
 bool button_pressed = false;
+bool last_button_state = LOW;
+const float kMinTemp = 15.0f;
+const float kMaxTemp = 45.0f;
+
+// OTHER
+const float Kp = 14.0f;
+const float Ki = 0.14f;
+const float Kd = 0.0f;
+const float setpoint = 37.5f;
+const uint8_t kPwmMaxOutput = 159;
 
 
 void setup()
 {
+    // Set clock speed to 8MHz
     clock_prescale_set(clock_div_1);
 
-    // Setup PID parameters
-    pid_controller.UpdateTuning(15.0f, 0.0f, 0.0f);
-    pid_controller.UpdateSetpoint(37.5f);
-
-    // Setup PWM (for Arduino Nano) CHANGE ME
+    // Setup PWM for 100kHz, ATtiny85
     SET_OUTPUT(kPwmPin);
-    TCCR1A = 0;
-    TCCR1B = 0;
-    TCCR1A |= (1 << COM1A1);
-    TCCR1A |= (1 << WGM11);
-    TCCR1B |= (1 << WGM12) | (1 << WGM13);
-    TCCR1B |= (1 << CS10);
-    ICR1 = 159;
+    _delay_us(110);
+    PLLCSR |= (1 << PLLE);
+    while (!(PLLCSR & (1 << PLOCK)));
+    PLLCSR |= (1 << PCKE);
+    OCR1C = kPwmMaxOutput;
+    TCCR1 = (1 << PWM1A) | (1 << COM1A1) | (1 << CS11) | (1 << CS10);
 
+    // Setup PID controller parameters
+    pid_controller.UpdateTuning(Kp, Ki, Kd);
+    pid_controller.UpdateSetpoint(setpoint);
 
-
-
-
-
-
-
-    // ATTINY85
-    // SET_OUTPUT(kPwmPin);
-    // _delay_us(110);
-    // PLLCSR |= (1 << PLLE);
-    // while (!(PLLCSR & (1 << PLOCK)));
-    // PLLCSR |= (1 << PCKE);
-    // OCR1C = 159;
-    // TCCR1 = (1 << PWM1A) | (1 << COM1A1) | (1 << CS11) | (1 << CS10);
-
-
-
-
-
-
-
-
-
-    // Setup Button and Knob
+    // Setup UI Controls
     SET_INPUT(kKnobPin);
     SET_INPUT(kButtonPin);
 }
@@ -116,7 +99,7 @@ void setup()
 
 void loop()
 {
-    // Poll if button is pressed
+    // UI: Check if user wishes to adjust setpoint
     bool current_button_state = READ_PIN(kButtonPin);
     button_pressed = (last_button_state == HIGH && current_button_state == LOW);
     last_button_state = current_button_state;
@@ -124,6 +107,10 @@ void loop()
     // State Machine
     switch (state)
     {
+        case kError:
+            StateError();
+            break;
+
         case kAdjustSetpoint:
             if (button_pressed)
             {
@@ -131,7 +118,7 @@ void loop()
                 break;
             }
 
-            AdjustSetpointState();
+            StateAdjustSetpoint();
             break;
 
         case kNormal:
@@ -141,99 +128,73 @@ void loop()
                 break;
             }
 
-            NormalState();
-            break;
-        
-        case kError:
-            ErrorState();
+            StateNormal();
             break;
     }
 }
 
 
-void NormalState()
+void StateError()
 {
-    // Update Interval
     current_time = millis();
     elapsed_time = current_time - start_time;
 
-    // PID Variables
-    static uint8_t sample_count = 0;
-    static float avg_temp = 0.0f;
-
-    // Display Variables
-    static bool display_temp = true;
-
-    // Logic
     if (elapsed_time > kSampleInterval)
     {
+        switch (error_code)
+        {
+            case 1:
+                display.ShowError(1);
+                break;
+
+            case 2:
+                display.ShowError(2);
+                break;
+        }
+
+        state = kNormal;
         start_time = current_time;
-        error_code = sensor.ReadSensor();
-        
-        if (error_code)
-        {
-            state = kError;
-            return;
-        }
-
-        sample_count++;
-        avg_temp += sensor.GetTemperature();
-
-        if (sample_count >= kSensorSamples)
-        {
-            if (pid_controller.Update(avg_temp/kSensorSamples))
-            {
-                if (display_temp)
-                    display.ShowTemperature(sensor.GetTemperature());
-                else
-                    display.ShowHumidity(sensor.GetHumidity());
-            }
-            else
-            {
-                state = kError;
-                error_code = 3;
-            }
-
-            sample_count = 0;
-            avg_temp = 0.0f;
-            display_temp = !display_temp;
-        }
     }
 }
 
 
-void AdjustSetpointState()
+void StateAdjustSetpoint()
 {
-    const uint16_t kTimeout = 30000; // milliseconds
-    const uint8_t kMaxSamples = 250;
-    static uint8_t sample_count = 0;
-    static uint32_t avg_value = 0;
-
+    const uint16_t kTimeout = 30000;
     static uint32_t timeout_start = 0;
-    uint32_t current_time = millis();
 
-    int value = analogRead(kKnobPin);
-    int position = map(value, 0, 1023, kMaxTemp*10, kMinTemp*10);
+    const uint8_t kSamples = 250;
+    static uint8_t sample_count = 0;
+    static uint32_t avg_sample_value = 0;
 
-    avg_value += position;
+    int knob_value = analogRead(kKnobPin);
+    int knob_position = map(knob_value, 0, 1023, kMaxTemp*10, kMinTemp*10);
+
+    avg_sample_value += knob_position;
     sample_count++;
 
-    if (sample_count > kMaxSamples)
+    if (sample_count > kSamples)
     {
-        avg_value /= kMaxSamples;
-        float new_setpoint = avg_value / 10.0f;
-        new_setpoint = round(new_setpoint * 2.0f) / 2.0f;       // Rounds to nearest 0.5C
+        avg_sample_value /= kSamples;
+        float new_setpoint = avg_sample_value * 0.1f;
+        new_setpoint = round(new_setpoint*2.0f) * 0.5f;     // Rounds to nearest 0.5C
 
         pid_controller.UpdateSetpoint(new_setpoint);
         display.ShowTemperature(pid_controller.GetSetpoint());
 
         sample_count = 0;
-        avg_value = 0;
+        avg_sample_value = 0;
     }
 
-    // Oops! You forgot that you were adjusting the setpoint and just left it there!
-    // After 30 seconds it will automatically exit this mode to prevent this scenario.
-    // Don't update the setpoint if this happens
+    /* 
+        Timeout: 
+            If the user forgets they were adjusting the setpoint,
+            then after ~30 seconds this mode will be automatically exited
+            and will resume normal operation. 
+            
+            The setpoint will be set to whatever the knob is set to.
+    */
+
     if ((current_time - timeout_start) > kTimeout)
     {
         timeout_start = current_time;
@@ -242,48 +203,58 @@ void AdjustSetpointState()
 }
 
 
-void ErrorState()
+void StateNormal()
 {
+    /*
+        During operation, the sensor is read every ~2.1 seconds with three readings (samples) being taken.
+        These readings are averaged and then sent to the PID controller to be evaluated.
+    */
+
     current_time = millis();
     elapsed_time = current_time - start_time;
 
     if (elapsed_time > kSampleInterval)
     {
-        switch(error_code)
-        {            
-            case 1:
-                display.ShowError(1);
-                break;
+        start_time = current_time;
+        error_code = sensor.ReadSensor();
 
-            case 2:
-                display.ShowError(2);
-                break;
+        // An error occurred! Stop everything!
+        if (error_code)
+        {
+            error_occurred = true;
+            pid_controller.FreezeOperations();
+            state = kError;
 
-            case 3:
-                display.ShowError(3);
-                break;
+            return;
         }
 
-        state = kNormal;
-        start_time = current_time;
+        // The error has been fixed. Resume normal operations :)
+        if (error_occurred && error_code == 0)
+        {
+            error_occurred = false;
+            pid_controller.RestoreOperations();
+        }
+
+        // The normal operations
+        static float avg_temp = 0.0f;
+        static uint8_t sample_count = 0;
+        static bool display_temp = true;
+
+        sample_count++;
+        avg_temp += sensor.GetTemperature();
+
+        if (sample_count >= kSensorSamples)
+        {
+            pid_controller.Output(avg_temp/kSensorSamples);
+
+            if (display_temp)
+                display.ShowTemperature(sensor.GetTemperature());
+            else
+                display.ShowHumidity(sensor.GetHumidity());
+
+            sample_count = 0;
+            avg_temp = 0.0f;
+            display_temp = !display_temp;
+        }
     }
 }
-
-
-/*
-
-1. Disable PID controller and output 255 continuously. Time how long it takes to reach 37.5C
-    COMPLETE: In an empty incubator it will take about 7.5 minutes to reach 37.5C from ~24C.
-
-2. Measure how much current is entering the peltier device to ballpark the power
-    COMPLETE: 11V and 4A through the TEC. This means the TEC itself can output a maximum of 44W.
-
-3. Let everything cool back down to room temperature. Disable the PID controller but pretend
-   that Kp = 1.0 and heat the incubator using that value. For example, if room temp is 24C and the setpoint
-   is 37.5, then with a Kp = 1.0 then the error is 13.5 which translates to 34/159. Let that heat
-   the incubator and time how long that takes.
-    COMPLETE: At about 7.5 minutes, it stalled at ~30C with a ~35% duty cycle. This means that ~15W is not enough
-    to get to 37.5C.
-
-4. From the above data, we can guesstimate a decent Kp and Ki value.
-*/
