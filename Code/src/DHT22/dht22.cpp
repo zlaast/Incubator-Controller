@@ -11,7 +11,7 @@
 #define HIGH true
 
 
-DHT22Sensor::DHT22Sensor(uint8_t data_pin)
+void DHT22Sensor::Begin(uint8_t data_pin)
 {
     data_pin_ = data_pin;
     binarize_threshold = 0;

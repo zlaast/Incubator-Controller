@@ -25,7 +25,7 @@
 class PID
 {
     public:
-        PID(uint8_t pwm_pin);
+        void Begin(uint8_t pwm_pin);
         void Output(float process_value);
         void UpdateSetpoint(float new_setpoint);
         void UpdateTuning(float Kp, float Ki, float Kd);

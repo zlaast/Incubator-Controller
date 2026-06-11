@@ -15,13 +15,12 @@
 #pragma once
 
 #include <Arduino.h>
-#include <util/delay.h>
 #include "../port_operations.h"
 
 class DHT22Sensor
 {
     public:
-        DHT22Sensor(uint8_t data_pin);
+        void Begin(uint8_t data_pin);
         uint8_t ReadSensor();
         float GetHumidity() const { return humidity_; }
         float GetTemperature() const { return temperature_; }

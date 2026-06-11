@@ -1,5 +1,19 @@
 #include "display.h"
 
+void Display::Begin()
+{
+    // Small welcome message that says "Incubate" :)
+    display.setBrightness(0x0f);
+    _delay_ms(100);
+    
+    display.setSegments(Incu);
+    _delay_ms(2000);
+    Clear();
+
+    display.setSegments(bAtE);
+    _delay_ms(2000);
+    Clear();
+}
 
 void Display::Clear()
 {

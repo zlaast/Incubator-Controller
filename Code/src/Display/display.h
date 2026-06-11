@@ -20,7 +20,6 @@
 
 #include <Arduino.h>
 #include <TM1637Display.h>
-#include <util/delay.h>
 
 class Display
 {
@@ -50,22 +49,8 @@ class Display
         };
 
     public:
-        Display(uint8_t CLK, uint8_t DIO): display(CLK, DIO) 
-        {
-            // Small welcome message that says "Incubate"
-            // :)
-            display.setBrightness(0x0f);
-            _delay_ms(100);
-            
-            display.setSegments(Incu);
-            _delay_ms(2000);
-            Clear();
-
-            display.setSegments(bAtE);
-            _delay_ms(2000);
-            Clear();
-        }
-
+        Display(uint8_t CLK, uint8_t DIO): display(CLK, DIO) {};
+        void Begin();
         void Clear();
         void ShowError(uint8_t error);                                    // Error Code. It's whatever you choose it to be.
         void ShowHumidity(float humidity);

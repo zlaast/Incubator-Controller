@@ -6,7 +6,7 @@
 const float kPwmMinOutput = 0;
 const float kPwmMaxOutput = 159;
 
-PID::PID(uint8_t pwm_pin)
+void PID::Begin(uint8_t pwm_pin)
 {
     pwm_pin_ = pwm_pin;
     setpoint_ = 37.5f;

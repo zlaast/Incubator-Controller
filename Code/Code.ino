@@ -47,9 +47,9 @@ bool error_occurred = false;
 enum States { kNormal, kAdjustSetpoint, kError };
 States state = kNormal;
 
-// CLASS INITIALIZATION
-PID pid_controller(kPwmPin);
-DHT22Sensor sensor(kSensorPin);
+// CLASS OBJECTS
+PID pid_controller;
+DHT22Sensor sensor;
 Display display(kDisplayClkPin, kDisplayDioPin);
 
 // OPERATION TIMING
@@ -77,7 +77,7 @@ void setup()
 {
     // Set clock speed to 8MHz
     clock_prescale_set(clock_div_1);
-
+    
     // Setup PWM for 100kHz, ATtiny85
     SET_OUTPUT(kPwmPin);
     _delay_us(110);
@@ -86,6 +86,11 @@ void setup()
     PLLCSR |= (1 << PCKE);
     OCR1C = kPwmMaxOutput;
     TCCR1 = (1 << PWM1A) | (1 << COM1A1) | (1 << CS11) | (1 << CS10);
+
+    // INITIALIZE CLASSES
+    pid_controller.Begin(kPwmPin);
+    sensor.Begin(kSensorPin);
+    display.Begin();
 
     // Setup PID controller parameters
     pid_controller.UpdateTuning(Kp, Ki, Kd);
