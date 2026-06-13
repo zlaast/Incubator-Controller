@@ -30,7 +30,6 @@ class PID
         void UpdateSetpoint(float new_setpoint);
         void UpdateTuning(float Kp, float Ki, float Kd);
         void FreezeOperations();    // If an error occurs, use this to stop controller until error is fixed
-        void RestoreOperations();   // After error is fixed, use this to restore operations
         float GetSetpoint() const { return setpoint_; }
 
     private:
@@ -39,13 +38,10 @@ class PID
         float Kp_;
         float Ki_;
         float Kd_;
-        float Kp_frozen_;
-        float Ki_frozen_;
-        float Kd_frozen_;
 
         float P(float error);
         float I(float error);
         float D(float error);
         float CalculateError(float process_value);
-        float ClampOutput(float input, uint8_t min, uint8_t max);
+        float ClampOutput(float input, float min_val, float max_val);
 };

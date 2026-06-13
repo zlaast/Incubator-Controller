@@ -43,7 +43,6 @@
 
 // STATE CONTROL
 uint8_t error_code = 0;
-bool error_occurred = false;
 enum States { kNormal, kAdjustSetpoint, kError };
 States state = kNormal;
 
@@ -165,6 +164,8 @@ void StateError()
 
 void StateAdjustSetpoint()
 {
+    current_time = millis();
+
     const uint16_t kTimeout = 30000;
     static uint32_t timeout_start = 0;
 
@@ -218,6 +219,11 @@ void StateNormal()
     current_time = millis();
     elapsed_time = current_time - start_time;
 
+    // The normal operations
+    static float avg_temp = 0.0f;
+    static uint8_t sample_count = 0;
+    static bool display_temp = true;
+
     if (elapsed_time > kSampleInterval)
     {
         start_time = current_time;
@@ -226,24 +232,13 @@ void StateNormal()
         // An error occurred! Stop everything!
         if (error_code)
         {
-            error_occurred = true;
             pid_controller.FreezeOperations();
             state = kError;
+            avg_temp = 0.0f;
+            sample_count = 0;
 
             return;
         }
-
-        // The error has been fixed. Resume normal operations :)
-        if (error_occurred && error_code == 0)
-        {
-            error_occurred = false;
-            pid_controller.RestoreOperations();
-        }
-
-        // The normal operations
-        static float avg_temp = 0.0f;
-        static uint8_t sample_count = 0;
-        static bool display_temp = true;
 
         sample_count++;
         avg_temp += sensor.GetTemperature();

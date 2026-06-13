@@ -13,9 +13,6 @@ void PID::Begin(uint8_t pwm_pin)
     Kp_ = 1.0f;
     Ki_ = 0.0f;
     Kd_ = 0.0f;
-    Kp_frozen_ = 0.0f;
-    Ki_frozen_ = 0.0f;
-    Kd_frozen_ = 0.0f;
     OCR1A = 0;
 }
 
@@ -46,17 +43,6 @@ void PID::UpdateTuning(float Kp, float Ki, float Kd)
 void PID::FreezeOperations()
 {
     OCR1A = 0;
-    Kp_frozen_ = Kp_;
-    Ki_frozen_ = Ki_;
-    Kd_frozen_ = Kd_;
-
-    UpdateTuning(0.0f, 0.0f, 0.0f);
-}
-
-
-void PID::RestoreOperations()
-{
-    UpdateTuning(Kp_frozen_, Ki_frozen_, Kd_frozen_);
 }
 
 
@@ -90,12 +76,12 @@ float PID::CalculateError(float process_value)
 }
 
 
-float PID::ClampOutput(float input, uint8_t min, uint8_t max)
+float PID::ClampOutput(float input, float min_val, float max_val)
 {
-    if (input < min)
-        return min;
-    else if (input > max)
-        return max;
+    if (input < min_val)
+        return min_val;
+    else if (input > max_val)
+        return max_val;
 
     return input;
 }
